@@ -1,0 +1,130 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+env:
+  AWS_REGION: us-east-1
+
+# Interview note: OIDC eliminates long-lived AWS credentials in GitHub Secrets.
+# GitHub mints a 15-minute token, assumed via AssumeRoleWithWebIdentity.
+# The trust policy is scoped to this exact repo+branch.
+permissions:
+  id-token: write   # Required for OIDC token request
+  contents: read
+
+jobs:
+
+  build-and-push:
+    name: Build & Push — ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [order-service, inventory-service, payment-service, api-gateway]
+      # All 4 services build in parallel; one failure doesn't cancel the others
+      fail-fast: false
+
+    outputs:
+      # Each job exposes its image URI for the deploy job
+      image_uri: ${{ steps.build.outputs.image_uri }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/orderflow-github-actions-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build JAR (skip tests — already run in CI)
+        run: ./mvnw package -pl ${{ matrix.service }} -am -DskipTests -q
+
+      - name: Build & push Docker image
+        id: build
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          SERVICE: ${{ matrix.service }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE_URI="${ECR_REGISTRY}/orderflow/${SERVICE}:${IMAGE_TAG}"
+          docker build -t "${IMAGE_URI}" -f "${SERVICE}/Dockerfile" .
+          docker push "${IMAGE_URI}"
+          # Also tag as 'latest' for human-readable reference
+          docker tag "${IMAGE_URI}" "${ECR_REGISTRY}/orderflow/${SERVICE}:latest"
+          docker push "${ECR_REGISTRY}/orderflow/${SERVICE}:latest"
+          echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy — ${{ matrix.service }}
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [order-service, inventory-service, payment-service, api-gateway]
+      fail-fast: false
+    environment: ${{ vars.ENVIRONMENT || 'dev' }}
+
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/orderflow-github-actions-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update ECS service with new image
+        env:
+          CLUSTER: orderflow-${{ vars.ENVIRONMENT || 'dev' }}
+          SERVICE_NAME: orderflow-${{ matrix.service }}
+          TASK_FAMILY: orderflow-${{ matrix.service }}
+          ECR_REGISTRY: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+          IMAGE_URI: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/orderflow/${{ matrix.service }}:${{ github.sha }}
+        run: |
+          # 1. Fetch current task definition (strip read-only fields)
+          TASK_DEF=$(aws ecs describe-task-definition \
+            --task-definition "${TASK_FAMILY}" \
+            --query 'taskDefinition' \
+            --output json)
+
+          # 2. Inject the new image into the first container definition
+          NEW_TASK_DEF=$(echo "${TASK_DEF}" | jq \
+            --arg IMAGE "${IMAGE_URI}" \
+            '.containerDefinitions[0].image = $IMAGE
+             | del(.taskDefinitionArn, .revision, .status,
+                   .requiresAttributes, .compatibilities,
+                   .registeredAt, .registeredBy)')
+
+          # 3. Register the new revision
+          NEW_TASK_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "${NEW_TASK_DEF}" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+
+          echo "Registered task: ${NEW_TASK_ARN}"
+
+          # 4. Update service → triggers rolling deploy with circuit breaker
+          aws ecs update-service \
+            --cluster "${CLUSTER}" \
+            --service "${SERVICE_NAME}" \
+            --task-definition "${NEW_TASK_ARN}" \
+            --force-new-deployment
+
+          # 5. Wait for rollout to stabilise (or circuit breaker to roll back)
+          echo "Waiting for ${SERVICE_NAME} to stabilise..."
+          aws ecs wait services-stable \
+            --cluster "${CLUSTER}" \
+            --services "${SERVICE_NAME}"
+
+          echo "✓ ${{ matrix.service }} deployed successfully"

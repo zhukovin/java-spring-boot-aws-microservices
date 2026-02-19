@@ -1,0 +1,41 @@
+# Maven
+target/
+*.class
+!.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+*.iws
+.eclipse/
+.classpath
+.project
+.settings/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Spring Boot
+*.pid
+spring-shell.log
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.backup
+*.tfplan
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+!.env.example
+
+# Test coverage
+jacoco.exec

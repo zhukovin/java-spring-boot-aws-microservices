@@ -1,0 +1,80 @@
+spring:
+  application:
+    name: order-service
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
+server:
+  port: 8080
+
+aws:
+  region: ${AWS_REGION:us-east-1}
+  dynamodb:
+    endpoint-override: ${DYNAMODB_ENDPOINT:}
+    tables:
+      orders: ${ORDERS_TABLE:orders}
+      idempotency: ${IDEMPOTENCY_TABLE:order_idempotency_keys}
+      outbox: ${OUTBOX_TABLE:order_outbox}
+
+app:
+  kafka:
+    topics:
+      orders-events: ${ORDERS_EVENTS_TOPIC:orders.events}
+  outbox:
+    poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:1000}
+    batch-size: ${OUTBOX_BATCH_SIZE:50}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLE_RATE:1.0}
+
+otel:
+  exporter:
+    otlp:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4317}
+  resource:
+    attributes:
+      service.name: order-service
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    com.orderflow: ${LOG_LEVEL:INFO}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+  kafka:
+    bootstrap-servers: localhost:9092
+
+aws:
+  dynamodb:
+    endpoint-override: http://localhost:8000
+
+logging:
+  level:
+    com.orderflow: DEBUG

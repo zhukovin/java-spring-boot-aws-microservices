@@ -1,0 +1,99 @@
+spring:
+  application:
+    name: inventory-service
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: inventory-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.orderflow.*"
+        spring.json.use.type.headers: "false"
+        spring.json.value.default.type: com.orderflow.common.events.OrderCreatedEvent
+
+server:
+  port: 8080
+
+aws:
+  region: ${AWS_REGION:us-east-1}
+  dynamodb:
+    endpoint-override: ${DYNAMODB_ENDPOINT:}
+    tables:
+      inventory: ${INVENTORY_TABLE:inventory}
+      inventory-idempotency: ${INVENTORY_IDEMPOTENCY_TABLE:inventory_idempotency}
+
+app:
+  kafka:
+    topics:
+      orders-events: ${ORDERS_EVENTS_TOPIC:orders.events}
+      inventory-events: ${INVENTORY_EVENTS_TOPIC:inventory.events}
+
+# ── Resilience4j ──────────────────────────────────────────────────────────────
+resilience4j:
+  circuitbreaker:
+    instances:
+      inventory:
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 3
+        registerHealthIndicator: true
+  retry:
+    instances:
+      inventory:
+        maxAttempts: 3
+        waitDuration: 200ms
+        enableExponentialBackoff: true
+        exponentialBackoffMultiplier: 2
+        exponentialMaxWaitDuration: 2s
+        # Don't retry business-logic failures (insufficient stock)
+        ignoreExceptions:
+          - software.amazon.awssdk.services.dynamodb.model.TransactionCanceledException
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+otel:
+  exporter:
+    otlp:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4317}
+  resource:
+    attributes:
+      service.name: inventory-service
+
+logging:
+  level:
+    com.orderflow: ${LOG_LEVEL:INFO}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+  kafka:
+    bootstrap-servers: localhost:9092
+
+aws:
+  dynamodb:
+    endpoint-override: http://localhost:8000
+
+logging:
+  level:
+    com.orderflow: DEBUG
