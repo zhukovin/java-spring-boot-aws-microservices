@@ -68,12 +68,6 @@ spring:
   config:
     activate:
       on-profile: local
-  kafka:
-    bootstrap-servers: localhost:9092
-
-aws:
-  dynamodb:
-    endpoint-override: http://localhost:8000
 
 logging:
   level:
