@@ -55,9 +55,6 @@ spring:
   config:
     activate:
       on-profile: local
-  data:
-    redis:
-      host: localhost
 
 logging:
   level:
