@@ -30,7 +30,7 @@ import java.util.concurrent.TimeUnit;
 public class OutboxPublisherService {
 
     private final OutboxRepository outboxRepository;
-    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final KafkaTemplate<String, String> kafkaTemplate;
 
     @Value("${app.kafka.topics.orders-events:orders.events}")
     private String ordersEventsTopic;
