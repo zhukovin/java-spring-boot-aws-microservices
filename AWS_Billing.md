@@ -47,14 +47,14 @@ aws dynamodb list-tables --output table
 
 ## Cost Breakdown
 
-| Resource | Approx cost | Stop how? |
-|---|---|---|
-| ECS Fargate tasks (4×) | ~$0.03/hr | Scale desired count to 0 (see below) |
-| ALB | ~$0.02/hr (~$16/month) | Must delete — `terraform destroy` |
-| EC2 t3.micro (Kafka + Redis) | ~$0.01/hr | Stop instance (see below) |
-| Secrets Manager (2 secrets) | ~$0.80/month | Negligible |
-| ECR storage | ~$0.01/month | Negligible |
-| DynamoDB | ~$0/month | Pay-per-request at low traffic = near zero |
+| Resource | Approx cost             | Stop how? |
+|---|-------------------------|---|
+| ECS Fargate tasks (4×) | ~$0.03/hr               | Scale desired count to 0 (see below) |
+| ALB | ~$0.02/hr (~\$16/month) | Must delete — `terraform destroy` |
+| EC2 t3.micro (Kafka + Redis) | ~$0.01/hr               | Stop instance (see below) |
+| Secrets Manager (2 secrets) | ~$0.80/month            | Negligible |
+| ECR storage | ~$0.01/month            | Negligible |
+| DynamoDB | ~$0/month               | Pay-per-request at low traffic = near zero |
 
 ---
 
