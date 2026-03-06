@@ -1,6 +1,5 @@
 module "networking" {
-  source     = "./modules/networking"
-  aws_region = var.aws_region
+  source = "./modules/networking"
 }
 
 module "ecr" {

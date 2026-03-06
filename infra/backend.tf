@@ -6,7 +6,7 @@ terraform {
     bucket         = "orderflow-terraform-state-ACCOUNT_ID"
     key            = "orderflow/terraform.tfstate"
     region         = "us-east-1"
-    dynamodb_table = "orderflow-terraform-locks"
+    use_lockfile   = true
     encrypt        = true
   }
 }

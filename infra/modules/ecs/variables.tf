@@ -7,7 +7,10 @@ variable "task_role_arn"       { type = string }
 variable "execution_role_arn"  { type = string }
 variable "kafka_secret_arn"    { type = string }
 variable "api_keys_secret_arn" { type = string }
-variable "desired_count"       { type = number; default = 1 }
+variable "desired_count" {
+  type    = number
+  default = 1
+}
 
 variable "ecr_repository_urls" {
   description = "Map of service name to ECR repository URL"
