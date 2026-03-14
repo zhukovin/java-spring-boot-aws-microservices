@@ -62,18 +62,29 @@ sequenceDiagram
 ├── inventory-service/        # Kafka consumer + conditional DynamoDB updates
 ├── payment-service/          # Kafka consumer + circuit-breaker payment sim
 ├── api-gateway/              # Spring Cloud Gateway + Redis rate limiter
-├── infra/                    # Terraform modules (ECR, ECS, IAM, Secrets)
-│   └── modules/
-│       ├── ecr/              # 4 ECR repos with lifecycle policies
-│       ├── ecs/              # Fargate cluster, ALB, 4 services, deploy circuit breaker
-│       ├── iam/              # Task role, execution role, GitHub OIDC role
-│       ├── networking/       # Default VPC data source
-│       └── secrets/          # Secrets Manager (Kafka, API keys)
+├── infra/                    # Terraform modules (ECR, ECS, IAM, Secrets, DynamoDB, Kafka EC2)
+│   ├── modules/
+│   │   ├── dynamodb/         # 5 DynamoDB tables with correct schemas and GSIs
+│   │   ├── ecr/              # 4 ECR repos with lifecycle policies
+│   │   ├── ecs/              # Fargate cluster, ALB, 4 services, Service Connect, deploy circuit breaker
+│   │   ├── iam/              # Task role, execution role, GitHub OIDC role
+│   │   ├── kafka_ec2/        # EC2 t3.micro running Kafka + Redis (auto-configured via user_data)
+│   │   ├── networking/       # Default VPC data source
+│   │   └── secrets/          # Secrets Manager (Kafka, API keys)
+│   └── terraform.tfvars.example  # Variable template (copy to terraform.tfvars)
 ├── .github/workflows/
 │   ├── ci.yml                # Unit tests + OWASP dependency-check on PR
 │   └── cd.yml                # OIDC → ECR push → ECS rolling deploy (matrix)
+├── bootstrap.sh              # One-time setup: S3 bucket, SSH key, terraform.tfvars
+├── deploy.sh                 # Post-terraform: build images, update secrets, deploy, seed, smoke-test
+├── up.sh                     # Single entry point: runs bootstrap → terraform → deploy
 ├── docker-compose.yml        # Full local stack (all services + infra)
-├── scripts/smoke-test.sh     # End-to-end API validation
+├── scripts/
+│   ├── smoke-test.sh         # End-to-end API validation
+│   ├── build-and-push.sh     # Maven build + Docker build + ECR push
+│   ├── update-task-defs.sh   # ECS task definition update + rolling deploy
+│   ├── seed-inventory.sh     # Idempotent DynamoDB inventory seed
+│   └── wait-for-kafka.sh     # SSM-based Kafka readiness poll (no SSH needed)
 └── .env.example              # All configurable environment variables
 ```
 
@@ -115,35 +126,66 @@ curl -X POST http://localhost:8080/orders \
 
 ## AWS Deployment
 
-### Prerequisites (one-time, manual)
+### Automated Setup (recommended)
+
+Everything — S3 state bucket, EC2 Kafka+Redis, DynamoDB tables, ECS services, Docker images,
+inventory seed — is provisioned automatically by three scripts.
+
+**Prerequisites:** AWS CLI configured, Docker, Java 21, Terraform ≥ 1.9, `jq`, `python3`
 
 ```bash
-# 1. Terraform remote state
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-aws s3api create-bucket --bucket orderflow-terraform-state-${ACCOUNT_ID} --region us-east-1
-aws s3api put-bucket-versioning --bucket orderflow-terraform-state-${ACCOUNT_ID} \
-  --versioning-configuration Status=Enabled
+# Single command: bootstrap → terraform apply → deploy → smoke-test
+./up.sh YOUR_GITHUB_USERNAME
+```
 
-aws dynamodb create-table \
-  --table-name orderflow-terraform-locks \
-  --attribute-definitions AttributeName=LockID,AttributeType=S \
-  --key-schema AttributeName=LockID,KeyType=HASH \
-  --billing-mode PAY_PER_REQUEST --region us-east-1
+Or step by step if you want to review each phase:
 
-# 2. Update infra/backend.tf with your account ID, then:
+```bash
+# Step 1 — One-time bootstrap (creates S3 bucket, SSH key, terraform.tfvars)
+./bootstrap.sh YOUR_GITHUB_USERNAME
+
+# Step 2 — Provision all infrastructure (~5 minutes)
 cd infra
 terraform init
-terraform apply -var="github_org=YOUR_GITHUB_ORG"
+terraform apply -var-file=terraform.tfvars
+cd ..
 
-# 3. After apply, seed Kafka secret:
-aws secretsmanager update-secret \
-  --secret-id orderflow/kafka \
-  --secret-string '{"bootstrap_servers":"YOUR_KAFKA_HOST:9092"}'
-
-# 4. Configure GitHub repo:
-#    Settings → Variables → AWS_ACCOUNT_ID = your 12-digit account ID
-#    Settings → Secrets  → NVD_API_KEY     = (optional, for OWASP scans)
+# Step 3 — Build images, deploy to ECS, seed data, smoke-test (~10 minutes)
+./deploy.sh
 ```
+
+What gets created automatically:
+- S3 bucket for Terraform state
+- EC2 t3.micro running Kafka 4.x + Redis 6 (configured via `user_data` on first boot)
+- All 5 DynamoDB tables with correct schemas and GSIs
+- ECS Fargate cluster with 4 services behind an ALB
+- ECS Service Connect so services discover each other by DNS (no hardcoded IPs)
+- ECR repositories, IAM roles, Secrets Manager secrets, CloudWatch log groups
+- Inventory seed data (SKU-001, SKU-002, SKU-003)
+
+### Manual Setup (step-by-step with verification)
+
+See [`AWS_Deploy.md`](AWS_Deploy.md) for a detailed walkthrough with a verification
+command after every step. Useful if the automated setup fails partway through or
+you want to understand what each step does.
+
+Additional reference guides:
+- [`Kafka_Install.md`](Kafka_Install.md) — manual Kafka 4.x installation on EC2
+- [`Redis_Install.md`](Redis_Install.md) — manual Redis 6 installation on EC2
+- [`AWS_Billing.md`](AWS_Billing.md) — cost breakdown, how to pause and resume, full teardown
+
+### GitHub Actions (CI/CD)
+
+After `terraform apply`, set one repository variable in
+**Settings → Secrets and variables → Actions → Variables**:
+
+| Variable | Value |
+|---|---|
+| `AWS_ACCOUNT_ID` | your 12-digit AWS account ID |
+| `ENVIRONMENT` | `dev` |
+
+The GitHub Actions OIDC role is created by Terraform automatically — no AWS credentials
+need to be stored in GitHub.
 
 ### CI/CD Flow
 

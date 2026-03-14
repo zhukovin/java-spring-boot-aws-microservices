@@ -7,6 +7,10 @@ variable "task_role_arn"       { type = string }
 variable "execution_role_arn"  { type = string }
 variable "kafka_secret_arn"    { type = string }
 variable "api_keys_secret_arn" { type = string }
+variable "kafka_ec2_private_ip" {
+  description = "Private IP of the Kafka+Redis EC2 instance — injected as REDIS_HOST into api-gateway"
+  type        = string
+}
 variable "desired_count" {
   type    = number
   default = 1

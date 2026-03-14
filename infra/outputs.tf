@@ -17,3 +17,13 @@ output "github_actions_role_arn" {
   description = "IAM role ARN to set as the GitHub Actions OIDC role"
   value       = module.iam.github_actions_role_arn
 }
+
+output "kafka_ec2_private_ip" {
+  description = "Private IP of the Kafka+Redis EC2 instance"
+  value       = module.kafka_ec2.private_ip
+}
+
+output "kafka_ec2_instance_id" {
+  description = "EC2 instance ID — used by deploy.sh to poll readiness via SSM"
+  value       = module.kafka_ec2.instance_id
+}
