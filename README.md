@@ -163,6 +163,23 @@ What gets created automatically:
 - ECR repositories, IAM roles, Secrets Manager secrets, CloudWatch log groups
 - Inventory seed data (SKU-001, SKU-002, SKU-003)
 
+### Teardown
+
+To destroy all AWS resources and clean up local config:
+
+```bash
+./teardown.sh
+```
+
+The script prompts for confirmation, then runs in five phases:
+1. Delete ECR images (required before Terraform can remove the repos)
+2. `terraform destroy` — removes ECS, ALB, EC2, DynamoDB, IAM, Secrets Manager, etc.
+3. Delete the S3 state bucket (created outside Terraform by `bootstrap.sh`)
+4. Remove local files — SSH key, `terraform.tfvars`, `.terraform/` cache
+5. Verify all resources are gone
+
+After teardown, `./up.sh YOUR_GITHUB_USERNAME` will rebuild everything from scratch.
+
 ### Manual Setup (step-by-step with verification)
 
 See [`AWS_Deploy.md`](AWS_Deploy.md) for a detailed walkthrough with a verification
