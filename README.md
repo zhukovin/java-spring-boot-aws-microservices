@@ -78,6 +78,7 @@ sequenceDiagram
 ├── bootstrap.sh              # One-time setup: S3 bucket, SSH key, terraform.tfvars
 ├── deploy.sh                 # Post-terraform: build images, update secrets, deploy, seed, smoke-test
 ├── up.sh                     # Single entry point: runs bootstrap → terraform → deploy
+├── teardown.sh               # Destroy all AWS resources and clean up local config
 ├── docker-compose.yml        # Full local stack (all services + infra)
 ├── scripts/
 │   ├── smoke-test.sh         # End-to-end API validation
@@ -85,6 +86,10 @@ sequenceDiagram
 │   ├── update-task-defs.sh   # ECS task definition update + rolling deploy
 │   ├── seed-inventory.sh     # Idempotent DynamoDB inventory seed
 │   └── wait-for-kafka.sh     # SSM-based Kafka readiness poll (no SSH needed)
+├── AWS_Deploy.md             # Step-by-step manual deployment guide with verification
+├── AWS_Billing.md            # Cost breakdown, pause/resume, teardown instructions
+├── Kafka_Install.md          # Manual Kafka 4.x installation on EC2
+├── Redis_Install.md          # Manual Redis 6 installation on EC2
 └── .env.example              # All configurable environment variables
 ```
 
